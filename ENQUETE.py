@@ -26,7 +26,7 @@ if not BOT_TOKEN:
     sys.exit(1)
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
-DEFAULT_BUYER_IDS = [1312375517927706630]  # Même buyer que Velda par défaut, modifiable
+DEFAULT_BUYER_IDS = [1312375517927706630, 1312375955737542676]  # Même buyer que Velda par défaut, modifiable
 DEFAULT_PREFIX = "!"
 DB_PATH = "enquete.db"
 
