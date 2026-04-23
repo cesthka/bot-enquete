@@ -26,9 +26,15 @@ if not BOT_TOKEN:
     sys.exit(1)
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
-DEFAULT_BUYER_IDS = [1312375517927706630, 1312375955737542676]  # Même buyer que Velda par défaut, modifiable
+DEFAULT_BUYER_IDS = [1312375517927706630, 1312375955737542676, 1173948561881317389]  # Même buyer que Velda par défaut, modifiable
 DEFAULT_PREFIX = "!"
-DB_PATH = "enquete.db"
+# Volume persistant : DATA_DIR doit pointer vers un dossier persistant (volume Railway)
+DATA_DIR = os.environ.get("DATA_DIR")
+if not DATA_DIR:
+    print("[ERREUR CRITIQUE] DATA_DIR non défini. Configure DATA_DIR=/data dans Railway.")
+    sys.exit(1)
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "enquete.db")
 
 # Logger
 logging.basicConfig(
