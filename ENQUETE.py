@@ -51,6 +51,7 @@ def init_db():
     c.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS profiles (user_id TEXT PRIMARY KEY, data TEXT NOT NULL)")
     c.execute("CREATE TABLE IF NOT EXISTS tickets (user_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL)")
+    c.execute("CREATE TABLE IF NOT EXISTS published (user_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, message_id TEXT NOT NULL)")
     conn.commit()
     conn.close()
 
@@ -160,6 +161,29 @@ def remove_ticket_by_user(user_id):
     conn.close()
 
 
+# ---- Profil publié (unique par personne) ----
+def set_published(user_id, channel_id, message_id):
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO published VALUES (?, ?, ?)",
+                 (str(user_id), str(channel_id), str(message_id)))
+    conn.commit()
+    conn.close()
+
+
+def get_published(user_id):
+    conn = get_db()
+    row = conn.execute("SELECT channel_id, message_id FROM published WHERE user_id = ?", (str(user_id),)).fetchone()
+    conn.close()
+    return (row["channel_id"], row["message_id"]) if row else None
+
+
+def remove_published(user_id):
+    conn = get_db()
+    conn.execute("DELETE FROM published WHERE user_id = ?", (str(user_id),))
+    conn.commit()
+    conn.close()
+
+
 # ========================= HELPERS =========================
 
 def is_owner(user_id):
@@ -230,27 +254,114 @@ def genre_label(data):
     return None
 
 
+def dm_label(data):
+    d = data.get("dm")
+    if d == "Ouverts":
+        return "🟢 Ouverts"
+    if d == "Fermés":
+        return "🔴 Fermés"
+    if d == "Sur demande":
+        return "🟡 Sur demande"
+    return None
+
+
+# Listes prédéfinies
+ORIENTATIONS = ["Hétéro", "Homosexuel(le)", "Bisexuel(le)", "Pansexuel(le)", "Asexuel(le)", "Autre", "Ne se prononce pas"]
+RECHERCHE_OPTS = ["Relation sérieuse", "Relation légère", "Amitié", "Je ne sais pas encore"]
+DM_OPTS = ["Ouverts", "Fermés", "Sur demande"]
+
+# Séparateurs déco (chaque membre choisit le sien)
+SEPARATORS = [
+    "─────────  ♡  ─────────",
+    "⋆ ｡ ˚ ☁︎ ˚ ｡ ⋆ ｡ ˚ ☽ ˚ ｡ ⋆",
+    "❀ ─────────────── ❀",
+    "╾━━━━━ ⋆ ❤ ⋆ ━━━━━╼",
+    "˚ ༘ ೀ⋆｡˚ ❀ ˚｡⋆ೀ ༘ ˚",
+    "▰▱▰▱▰▱▰▱▰▱▰▱▰▱",
+    "·｡ﾟ☆: *.☽ .* :☆ﾟ.·",
+    "❥ ──────────────── ❥",
+]
+
+
+def get_sep(data):
+    idx = data.get("sep_idx", 0)
+    if not isinstance(idx, int) or idx < 0 or idx >= len(SEPARATORS):
+        idx = 0
+    return SEPARATORS[idx]
+
+
+DESC_PROMPT = (
+    "✍️ **Écris ta description** — c'est ici que tu te présentes vraiment, en quelques lignes.\n"
+    "Inspire-toi de ces idées (pioche celles que tu veux) :\n\n"
+    "› **À quoi tu ressembles** — ton style, ton look, ce qui te rend unique\n"
+    "› **Ce que tu fais dans la vie** — tes études, ton job, tes projets du moment\n"
+    "› **Ce que tu aimerais faire plus tard** — tes rêves, tes ambitions\n"
+    "› **Ta personnalité** — ton humour, ton énergie, ce que tes proches diraient de toi\n"
+    "› **Ce que tu recherches** chez l'autre, et les moments que tu aimerais partager\n\n"
+    "Sois naturel·le et sincère, c'est ce qui donne vraiment envie de te parler. ✨\n"
+    "*Envoie ton texte maintenant :*"
+)
+
+
 def build_profile_embed(user, data, published=False):
     em = discord.Embed(title=f"💌 {data.get('prenom') or user.display_name}", color=DEFAULT_COLOR)
+
+    accroche = data.get("accroche")
+    if accroche:
+        em.description = f"*« {accroche} »*"
+    elif not published:
+        em.description = "*« (ajoute une phrase d'accroche) »*"
+
     try:
         em.set_thumbnail(url=user.display_avatar.url)
     except (AttributeError, TypeError):
         pass
 
-    def fld(name, value, inline=True):
-        if value:
-            em.add_field(name=name, value=value, inline=inline)
-        elif not published:
-            em.add_field(name=name, value="*(non rempli)*", inline=inline)
+    sep = get_sep(data)
 
-    fld("🎂 Âge", data.get("age"))
-    fld("🌸 Genre", genre_label(data))
-    fld("💞 Je recherche", data.get("recherche"), inline=False)
-    fld("📝 À propos", data.get("bio"), inline=False)
+    def add_sep():
+        em.add_field(name=sep, value="\u200b", inline=False)
+
+    def col(v):
+        if v:
+            return v
+        return "—" if published else "*(vide)*"
+
+    def full(name, v):
+        if v:
+            em.add_field(name=name, value=v[:1024], inline=False)
+        elif not published:
+            em.add_field(name=name, value="*(non rempli)*", inline=False)
+
+    age_val = f"{data['age']} ans" if data.get("age") else ""
+
+    add_sep()
+    em.add_field(name="✏️ Prénom", value=col(data.get("prenom")), inline=True)
+    em.add_field(name="🎂 Âge", value=col(age_val), inline=True)
+    em.add_field(name="🌸 Sexe", value=col(genre_label(data)), inline=True)
+
+    add_sep()
+    em.add_field(name="💘 Orientation", value=col(data.get("orientation")), inline=True)
+    em.add_field(name="💞 Recherche", value=col(data.get("recherche")), inline=True)
+    em.add_field(name="📩 MP (DM)", value=col(dm_label(data)), inline=True)
+
+    add_sep()
+    em.add_field(name="📍 Ville", value=col(data.get("ville")), inline=True)
+    em.add_field(name="🗣️ Langues", value=col(data.get("langues")), inline=True)
+    em.add_field(name="\u200b", value="\u200b", inline=True)
+
+    add_sep()
+    full("📖 Description", data.get("description"))
+    full("🎯 Passions", data.get("passions"))
+    full("💚 Qualités", data.get("qualites"))
+    full("💔 Défauts", data.get("defauts"))
     em.add_field(name="📨 Contact", value=user.mention, inline=False)
 
+    if data.get("photo"):
+        em.set_image(url=data["photo"])
+
     if not published:
-        em.set_footer(text="Édite chaque élément via le menu, puis choisis « Publier mon profil ».")
+        em.set_footer(text="Édite via le menu · choisis ton séparateur · puis publie.")
     return em
 
 
@@ -294,14 +405,31 @@ async def channel_prompt_and_wait(channel, author_id, prompt, timeout=120):
     return text
 
 
+async def choice_prompt(channel, author_id, title, options, timeout=120):
+    """Affiche une liste numérotée, attend un numéro, renvoie l'index choisi (ou None)."""
+    lines = "\n".join(f"**{i + 1}.** {opt}" for i, opt in enumerate(options))
+    text = await channel_prompt_and_wait(channel, author_id, f"{title}\n{lines}\n\n*Réponds par le **numéro**.*", timeout)
+    if text is None:
+        return None
+    try:
+        idx = int(text.strip()) - 1
+    except ValueError:
+        return None
+    if 0 <= idx < len(options):
+        return idx
+    return None
+
+
 # ========================= PUBLICATION =========================
 
 async def do_publish(guild, user, data):
     if not data or not data.get("prenom"):
         return False, "❌ Ton profil est incomplet (prénom manquant). Édite-le d'abord."
+    if not data.get("age"):
+        return False, "❌ Ajoute ton **âge** avant de publier."
     genre = data.get("genre")
     if genre not in ("homme", "femme", "autre"):
-        return False, "❌ Choisis ton **genre** dans ton profil avant de publier."
+        return False, "❌ Choisis ton **sexe** dans ton profil avant de publier."
 
     key = {"homme": "channel_homme", "femme": "channel_femme", "autre": "channel_autre"}[genre]
     cid = get_config(key)
@@ -311,11 +439,24 @@ async def do_publish(guild, user, data):
     if not ch:
         return False, "❌ Le salon de publication configuré est introuvable."
 
+    # Un seul profil publié par personne : on supprime l'ancien avant de reposter
+    prev = get_published(user.id)
+    if prev:
+        prev_ch = guild.get_channel(int(prev[0]))
+        if prev_ch:
+            try:
+                old_msg = await prev_ch.fetch_message(int(prev[1]))
+                await old_msg.delete()
+            except discord.HTTPException:
+                pass
+
     try:
-        await ch.send(embed=build_profile_embed(user, data, published=True))
+        sent = await ch.send(embed=build_profile_embed(user, data, published=True))
     except discord.HTTPException as e:
         return False, f"❌ Échec de la publication : `{e}`"
-    return True, f"✅ Ton profil a été publié dans {ch.mention} !"
+
+    set_published(user.id, ch.id, sent.id)
+    return True, f"✅ Ton profil a été publié dans {ch.mention} ! *(l'ancien a été remplacé)*"
 
 
 # ========================= TICKET PROFIL =========================
@@ -364,8 +505,12 @@ async def open_profile_ticket(interaction):
 
     set_ticket(user.id, ch.id)
     data = get_profile(user.id) or {}
+    if data.get("prenom"):
+        intro = f"{user.mention} voici ton espace profil — **modifie** ce que tu veux puis republie ✏️"
+    else:
+        intro = f"{user.mention} bienvenue dans ton espace profil — **crée** ton profil 💌"
     await ch.send(
-        content=f"{user.mention} bienvenue dans ton espace profil 💌",
+        content=intro,
         embed=build_profile_embed(user, data, published=False),
         view=TicketView(),
     )
@@ -376,10 +521,20 @@ class TicketEditSelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(label="Prénom / Pseudo", value="prenom", emoji="✏️"),
-            discord.SelectOption(label="Âge", value="age", emoji="🎂"),
-            discord.SelectOption(label="Genre", value="genre", emoji="🌸", description="Homme / Femme / Autre"),
+            discord.SelectOption(label="Âge (18+)", value="age", emoji="🎂"),
+            discord.SelectOption(label="Sexe", value="genre", emoji="🌸", description="Homme / Femme / Autre"),
+            discord.SelectOption(label="Orientation", value="orientation", emoji="💘"),
             discord.SelectOption(label="Je recherche", value="recherche", emoji="💞"),
-            discord.SelectOption(label="Description / Bio", value="bio", emoji="📝"),
+            discord.SelectOption(label="MP (DM)", value="dm", emoji="📩", description="Ouverts / Fermés / Sur demande"),
+            discord.SelectOption(label="Ville (optionnel)", value="ville", emoji="📍"),
+            discord.SelectOption(label="Langues connues", value="langues", emoji="🗣️"),
+            discord.SelectOption(label="Passions", value="passions", emoji="🎯"),
+            discord.SelectOption(label="Qualités", value="qualites", emoji="💚"),
+            discord.SelectOption(label="Défauts", value="defauts", emoji="💔"),
+            discord.SelectOption(label="Description (à propos)", value="description", emoji="📖"),
+            discord.SelectOption(label="Phrase d'accroche", value="accroche", emoji="✨"),
+            discord.SelectOption(label="Photo (URL)", value="photo", emoji="📷"),
+            discord.SelectOption(label="Séparateur déco", value="separateur", emoji="➰"),
             discord.SelectOption(label="Publier mon profil", value="publish", emoji="💌"),
             discord.SelectOption(label="Fermer le ticket", value="close", emoji="🔒"),
         ]
@@ -423,8 +578,9 @@ class TicketEditSelect(discord.ui.Select):
             await refresh()
             return
 
+        # --- Sexe (prédéfini + précision si Autre) ---
         if val == "genre":
-            text = await channel_prompt_and_wait(ch, owner_id, "Quel est ton **genre** ? Réponds **Homme**, **Femme** ou **Autre**.")
+            text = await channel_prompt_and_wait(ch, owner_id, "Quel est ton **sexe** ? Réponds **Homme**, **Femme** ou **Autre**.")
             if text is None:
                 return
             g = text.strip().lower()
@@ -445,11 +601,57 @@ class TicketEditSelect(discord.ui.Select):
             await refresh()
             return
 
+        # --- Choix prédéfinis par numéro ---
+        choice_map = {
+            "orientation": ("💘 Quelle est ton **orientation** ?", ORIENTATIONS, "orientation"),
+            "recherche": ("💞 Que **recherches**-tu ?", RECHERCHE_OPTS, "recherche"),
+            "dm": ("📩 Tes **MP (DM)** sont :", DM_OPTS, "dm"),
+        }
+        if val in choice_map:
+            title, opts, key = choice_map[val]
+            idx = await choice_prompt(ch, owner_id, title, opts)
+            if idx is None:
+                return
+            data[key] = opts[idx]
+            set_profile(owner_id, data)
+            await refresh()
+            return
+
+        # --- Séparateur déco ---
+        if val == "separateur":
+            idx = await choice_prompt(ch, owner_id, "➰ Choisis ton **séparateur** :", SEPARATORS)
+            if idx is None:
+                return
+            data["sep_idx"] = idx
+            set_profile(owner_id, data)
+            await refresh()
+            return
+
+        # --- Âge (validation 18+) ---
+        if val == "age":
+            text = await channel_prompt_and_wait(ch, owner_id, "🎂 Envoie ton **âge** (chiffre).")
+            if text is None:
+                return
+            t = text.strip()
+            if not t.isdigit() or int(t) < 18:
+                await interaction.followup.send("❌ Tu dois avoir **18 ans ou plus** et entrer un chiffre valide.", ephemeral=True)
+                return
+            data["age"] = str(int(t))
+            set_profile(owner_id, data)
+            await refresh()
+            return
+
+        # --- Champs texte libres ---
         prompts = {
-            "prenom": "Envoie ton **prénom / pseudo**.",
-            "age": "Envoie ton **âge**.",
-            "recherche": "Envoie ce que tu **recherches**.",
-            "bio": "Envoie ta **description / bio**.",
+            "prenom": "✏️ Envoie ton **prénom / pseudo**.",
+            "ville": "📍 Envoie ta **ville** (optionnel).",
+            "langues": "🗣️ Envoie les **langues** que tu parles (ex: Français, Anglais).",
+            "passions": "🎯 Envoie tes **passions / centres d'intérêt**.",
+            "qualites": "💚 Envoie tes **qualités**.",
+            "defauts": "💔 Envoie tes **défauts**.",
+            "description": DESC_PROMPT,
+            "accroche": "✨ Envoie ta **phrase d'accroche** (courte).",
+            "photo": "📷 Envoie l'**URL de ta photo** (lien image).",
         }
         if val in prompts:
             text = await channel_prompt_and_wait(ch, owner_id, prompts[val])
