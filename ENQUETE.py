@@ -532,11 +532,28 @@ class EmbedSelect(discord.ui.Select):
                 await interaction.followup.send("❌ Ajoute au moins un **titre** ou une **description** d'abord.", ephemeral=True)
                 await refresh()
                 return
+            dest_text = await channel_prompt_and_wait(
+                ch, aid,
+                "📤 Dans quel salon publier l'embed ? Mentionne-le (#salon), envoie son **ID**, ou tape `ici` pour ce salon."
+            )
+            if dest_text is None:
+                return
+            dt = dest_text.strip().lower()
+            if dt in ("ici", "here", "this"):
+                target = ch
+            else:
+                target = resolve_text_channel(interaction.guild, dest_text)
+            if target is None:
+                await interaction.followup.send("❌ Salon introuvable, embed non envoyé.", ephemeral=True)
+                await refresh()
+                return
             em = build_embed_from_cfg(cfg, preview=False)
             pub_view = LoveProfileView() if cfg.get("buttons", True) else None
             try:
-                await ch.send(embed=em, view=pub_view)
-                await interaction.followup.send("✅ Embed envoyé dans ce salon.", ephemeral=True)
+                await target.send(embed=em, view=pub_view)
+                await interaction.followup.send(f"✅ Embed envoyé dans {target.mention}.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.followup.send(f"❌ Je n'ai pas la permission d'écrire dans {target.mention}.", ephemeral=True)
             except discord.HTTPException as e:
                 await interaction.followup.send(f"❌ Échec de l'envoi : `{e}`", ephemeral=True)
             await refresh()
@@ -669,9 +686,9 @@ def build_config_embed(guild):
         color=DEFAULT_COLOR,
     )
     em.add_field(name="📁 Catégorie des tickets", value=show("ticket_category"), inline=False)
-    em.add_field(name="♂️ Salon Homme", value=show("channel_homme"), inline=False)
-    em.add_field(name="♀️ Salon Femme", value=show("channel_femme"), inline=False)
-    em.add_field(name="⚧️ Salon Autre", value=show("channel_autre"), inline=False)
+    em.add_field(name="💙 Salon Homme", value=show("channel_homme"), inline=False)
+    em.add_field(name="💗 Salon Femme", value=show("channel_femme"), inline=False)
+    em.add_field(name="💜 Salon Autre", value=show("channel_autre"), inline=False)
     return em
 
 
@@ -679,9 +696,9 @@ class ConfigSelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(label="Catégorie des tickets", value="ticket_category", emoji="📁"),
-            discord.SelectOption(label="Salon Homme", value="channel_homme", emoji="♂️"),
-            discord.SelectOption(label="Salon Femme", value="channel_femme", emoji="♀️"),
-            discord.SelectOption(label="Salon Autre", value="channel_autre", emoji="⚧️"),
+            discord.SelectOption(label="Salon Homme", value="channel_homme", emoji="💙"),
+            discord.SelectOption(label="Salon Femme", value="channel_femme", emoji="💗"),
+            discord.SelectOption(label="Salon Autre", value="channel_autre", emoji="💜"),
         ]
         super().__init__(placeholder="Que veux-tu configurer ?", min_values=1, max_values=1, options=options)
 
